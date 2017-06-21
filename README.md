@@ -7,9 +7,11 @@ You may run the node as:
 ```
 rosrun map_dilator map_dilator_node
 ```
+(This node will dilate the whole map)
 
 or
 
 ```
 rosrun map_dilator maplocal_dilator_node
 ```
+(This node will create a square filter(default: 6x6 m^2) around the robot and only dilate the obstacles within this sqaure)
