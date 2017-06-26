@@ -7,7 +7,7 @@ You may run the node as:
 ```
 rosrun map_dilator map_dilator_node
 ```
-(This node will dilate the whole map)
+(This node will dilate the whole map, I suggest not using this one)
 
 or
 
@@ -15,3 +15,9 @@ or
 rosrun map_dilator maplocal_dilator_node
 ```
 (This node will create a square filter(default: 6x6 m^2) around the robot and only dilate the obstacles within this sqaure)
+
+
+or more simply(you may adjust parameters in the launch file):
+```
+ roslaunch map_dilator maplocal_dilator.launch 
+```
