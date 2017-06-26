@@ -4,7 +4,7 @@
     <param name="use_range_filter"  value="false"/>
     <param name="range_threshold"   value="5.0"/>
     <!--  meters -->
-    <param name="localfilter_size"  value="6.0"/>
+    <param name="localfilter_size"  value="16.0"/>
     <!--  meters (default localfilter is a 6x6 m^2 sqaure) -->
     <param name="dilation_elem"        value="0"/>
     <!--      
@@ -19,7 +19,7 @@
      //     else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
      //     else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
 -->
-    <param name="buffer_size"        value="0.3"/>
+    <param name="buffer_size"        value="0.6"/>
 
 
 

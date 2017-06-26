@@ -82,24 +82,24 @@ pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
 geometry_msgs::PoseStamped pose_on_map;
 
 
-// bool use_range_filter = false;
-// double range_threshold = 5.0;   // meters
-// double localfilter_size = 16.0;  // meters (default localfilter is a 6x6 m^2 sqaure)
-bool use_range_filter;
-double range_threshold;   // meters
-double localfilter_size;  // meters (default localfilter is a 6x6 m^2 sqaure)
+bool use_range_filter = false;
+double range_threshold = 5.0;   // meters
+double localfilter_size = 16.0;  // meters (default localfilter is a 6x6 m^2 sqaure)
+// bool use_range_filter;
+// double range_threshold;   // meters
+// double localfilter_size;  // meters (default localfilter is a 6x6 m^2 sqaure)
 
 int now_obs_num;
 int now_obs_contour_num;
 Mat now_obs_dilated_img;
 
-// int dilation_elem = 0;
-int dilation_elem;
+int dilation_elem = 0;
+// int dilation_elem;
  // if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
  //  	else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
  //  	else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
-// double buffer_size = 0.3;
-double buffer_size ;
+double buffer_size = 0.3;
+// double buffer_size ;
 // buffer_size is the buffer size . Its unit is in meters.
 int dilation_size;
 int dilation_type;
