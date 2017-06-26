@@ -82,19 +82,24 @@ pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
 geometry_msgs::PoseStamped pose_on_map;
 
 
-bool use_range_filter = false;
-double range_threshold = 5.0;   // meters
-double localfilter_size = 6.0;  // meters (default localfilter is a 6x6 m^2 sqaure)
+// bool use_range_filter = false;
+// double range_threshold = 5.0;   // meters
+// double localfilter_size = 16.0;  // meters (default localfilter is a 6x6 m^2 sqaure)
+bool use_range_filter;
+double range_threshold;   // meters
+double localfilter_size;  // meters (default localfilter is a 6x6 m^2 sqaure)
 
 int now_obs_num;
 int now_obs_contour_num;
 Mat now_obs_dilated_img;
 
-int dilation_elem = 0;
+// int dilation_elem = 0;
+int dilation_elem;
  // if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
  //  	else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
  //  	else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
-double buffer_size = 0.4;
+// double buffer_size = 0.3;
+double buffer_size ;
 // buffer_size is the buffer size . Its unit is in meters.
 int dilation_size;
 int dilation_type;
@@ -160,11 +165,14 @@ int main(int argc, char **argv){
  //                                   Size( 2*dilation_size + 1, 2*dilation_size+1 ),
  //                                   Point( dilation_size, dilation_size ) );
 
-    ros::init(argc, argv, "gridmap_obstacle_reader");
+    ros::init(argc, argv, "maplocal_dilator");
     ros::NodeHandle n;
+
 
     tf::TransformListener listener;
     geometry_msgs::PoseStamped pose_odom;
+
+    
 
     // map_pub = n.advertise<nav_msgs::OccupancyGrid>("map_out",10);
     ros::Publisher grid_obstacles_array_pub = n.advertise<std_msgs::Float32MultiArray>(grid_obstacles_array_name , 10);
@@ -180,6 +188,27 @@ int main(int argc, char **argv){
 
     ros::Subscriber odom_sub = n.subscribe(odom_topic_name, 100, odomCallback);
     ros::Subscriber map_sub = n.subscribe(map_topic_name,1,mapCallback);
+
+    ros::NodeHandle np("~");
+    // Update parameters from launch file
+    // np.param<bool>("max_group_distance", use_range_filter, false);
+
+    // np.param<double>("range_threshold", range_threshold, 5.0);       // meters
+    // np.param<double>("localfilter_size", localfilter_size, 16.0);    // meters (default localfilter is a 6x6 m^2 sqaure)
+    // np.param<int>("dilation_elem", dilation_elem, 0); 
+    //  // if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
+    //  //     else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
+    //  //     else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
+    // np.param<double>("buffer_size", buffer_size, 0.3); 
+
+
+    np.getParam("use_range_filter", use_range_filter);
+    np.getParam("range_threshold", range_threshold);
+    np.getParam("localfilter_size", localfilter_size);
+    np.getParam("dilation_elem", dilation_elem);
+    np.getParam("buffer_size", buffer_size);
+
+
 
     // ros::Publisher chatter_pub = n.advertise<std_msgs::String>("chatter", 1000);
     ros::Rate loop_rate(10);

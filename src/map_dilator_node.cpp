@@ -304,6 +304,25 @@ int main(int argc, char **argv){
     ros::Subscriber odom_sub = n.subscribe(odom_topic_name, 100, odomCallback);
     ros::Subscriber map_sub = n.subscribe(map_topic_name,1,mapCallback);
 
+    ros::NodeHandle np("~");
+    // Update parameters from launch file
+    // np.param<bool>("max_group_distance", use_range_filter, false);
+
+    // np.param<double>("range_threshold", range_threshold, 5.0);       // meters
+    // np.param<int>("dilation_elem", dilation_elem, 0); 
+    //  // if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
+    //  //     else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
+    //  //     else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
+    // np.param<double>("buffer_size", buffer_size, 0.3); 
+
+
+    np.getParam("use_range_filter", use_range_filter);
+    np.getParam("range_threshold", range_threshold);
+    np.getParam("dilation_elem", dilation_elem);
+    np.getParam("buffer_size", buffer_size);
+
+
+
     // ros::Publisher chatter_pub = n.advertise<std_msgs::String>("chatter", 1000);
     ros::Rate loop_rate(10);
 
