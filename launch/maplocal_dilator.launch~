@@ -19,7 +19,8 @@
      //     else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
      //     else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
 -->
-    <param name="buffer_size"        value="0.6"/>
+    <param name="buffer_size"        value="0.5"/>
+    <param name="outer_buffer_size"        value="0.8"/>
 
 
 

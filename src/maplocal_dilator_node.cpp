@@ -70,6 +70,9 @@ std::string obstacles_pcd_topic_name = "/roahm/grid_obstacles/pcd";
 std::string contour_topic_name = "/roahm/contour/array";
 std::string map_dilated_contour_name = "/roahm/dilated_obstacles/array";
 std::string map_dilated_img_name = "/roahm/dilated_obstacles/image";
+std::string outer_contour_topic_name = "/roahm/outer_contour/array";
+std::string map_outer_dilated_contour_name = "/roahm/outer_dilated_obstacles/array";
+std::string map_outer_dilated_img_name = "/roahm/outer_dilated_obstacles/image";
 std::string pose_on_map_name = "/roahm/pose_odom";
 
 nav_msgs::OccupancyGrid now_map;
@@ -77,6 +80,8 @@ nav_msgs::Odometry now_odom;
 std_msgs::Float32MultiArray now_obstacles_array;
 std_msgs::Float32MultiArray now_dilated_obs_array;
 std_msgs::Float32MultiArray now_contour_array;
+std_msgs::Float32MultiArray now_outer_dilated_obs_array;
+std_msgs::Float32MultiArray now_outer_contour_array;
 pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
 
 geometry_msgs::PoseStamped pose_on_map;
@@ -91,7 +96,9 @@ double localfilter_size = 16.0;  // meters (default localfilter is a 6x6 m^2 sqa
 
 int now_obs_num;
 int now_obs_contour_num;
+int now_outer_obs_contour_num;
 Mat now_obs_dilated_img;
+Mat now_outer_obs_dilated_img;
 
 int dilation_elem = 0;
 // int dilation_elem;
@@ -100,7 +107,9 @@ int dilation_elem = 0;
  //  	else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
 double buffer_size = 0.3;
 // double buffer_size ;
-// buffer_size is the buffer size . Its unit is in meters.
+// buffer_size is the obstacle buffer size. Its unit is in meters.
+double outer_buffer_size = 0.5;
+// Unlike buffer_size, outer_buffer_size is a larger buffer size for obstacles, it is designed for global waypoints planning. Its unit is in meters.
 int dilation_size;
 int dilation_type;
 Mat element;
@@ -179,34 +188,40 @@ int main(int argc, char **argv){
     ros::Publisher obstacles_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZI> >(obstacles_pcd_topic_name, 1);
     ros::Publisher contour_pub = n.advertise<std_msgs::Float32MultiArray>(contour_topic_name , 10);
     ros::Publisher map_dilated_contour_pub = n.advertise<std_msgs::Float32MultiArray>(map_dilated_contour_name , 10);
+    ros::Publisher outer_contour_pub = n.advertise<std_msgs::Float32MultiArray>(outer_contour_topic_name , 10);
+    ros::Publisher map_outer_dilated_contour_pub = n.advertise<std_msgs::Float32MultiArray>(map_outer_dilated_contour_name , 10);
     ros::Publisher pose_pub = n.advertise<geometry_msgs::PoseStamped>(pose_on_map_name, 1);
     
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
     image_transport::Publisher map_dilated_img_pub = it.advertise(map_dilated_img_name, 1);
+    image_transport::Publisher map_outer_dilated_img_pub = it.advertise(map_outer_dilated_img_name, 1);
 
 
-    ros::Subscriber odom_sub = n.subscribe(odom_topic_name, 100, odomCallback);
+    ros::Subscriber odom_sub = n.subscribe(odom_topic_name, 1, odomCallback);
     ros::Subscriber map_sub = n.subscribe(map_topic_name,1,mapCallback);
 
-    ros::NodeHandle np("~");
     // Update parameters from launch file
-    // np.param<bool>("max_group_distance", use_range_filter, false);
+    ros::NodeHandle np("~");
+    np.getParam("map", map_topic_name);
+    np.getParam("/segway/odometry/local_filtered", odom_topic_name);
+    np.getParam("/roahm/grid_obstacles/array", grid_obstacles_array_name);
+    np.getParam("/roahm/grid_obstacles/pcd", obstacles_pcd_topic_name);
+    np.getParam("/roahm/contour/array", contour_topic_name);
+    np.getParam("/roahm/dilated_obstacles/array", map_dilated_contour_name);
+    np.getParam("/roahm/dilated_obstacles/image", map_dilated_img_name);
+    np.getParam("/roahm/pose_odom", pose_on_map_name);
+    np.getParam("/roahm/outer_contour/array", outer_contour_topic_name);
+    np.getParam("/roahm/outer_dilated_obstacles/array", map_outer_dilated_contour_name);
+    np.getParam("/roahm/outer_dilated_obstacles/image", map_outer_dilated_img_name);
+    np.getParam("/roahm/pose_odom", pose_on_map_name);
 
-    // np.param<double>("range_threshold", range_threshold, 5.0);       // meters
-    // np.param<double>("localfilter_size", localfilter_size, 16.0);    // meters (default localfilter is a 6x6 m^2 sqaure)
-    // np.param<int>("dilation_elem", dilation_elem, 0); 
-    //  // if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
-    //  //     else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
-    //  //     else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }
-    // np.param<double>("buffer_size", buffer_size, 0.3); 
-
-
-    np.getParam("use_range_filter", use_range_filter);
-    np.getParam("range_threshold", range_threshold);
-    np.getParam("localfilter_size", localfilter_size);
-    np.getParam("dilation_elem", dilation_elem);
-    np.getParam("buffer_size", buffer_size);
+    np.param("use_range_filter", use_range_filter, false);
+    np.param("range_threshold", range_threshold, 5.0);
+    np.param("localfilter_size", localfilter_size, 6.0);
+    np.param("dilation_elem", dilation_elem, 0);
+    np.param("buffer_size", buffer_size, 0.3);
+    np.param("outer_buffer_size", outer_buffer_size, 0.5);
 
 
 
@@ -229,11 +244,11 @@ int main(int argc, char **argv){
 
 		tf::StampedTransform transform;
 	    try{
-	        listener.lookupTransform("/odom", "/map",
+	        listener.lookupTransform("odom", "map",
 	                                ros::Time(0), transform);
 	    }
 	    catch (tf::TransformException &ex) {
-	        ROS_ERROR("Get trnsform exception : %s",ex.what());
+	        ROS_ERROR("Get transform exception : %s",ex.what());
 	        ros::Duration(1.0).sleep();
 	        // continue;
 	    }
@@ -295,8 +310,14 @@ int main(int argc, char **argv){
             ros::Duration diff = toc - tic;
             std::cout <<"Finding SLAM grid(with local filter) took: "<< diff <<"seconds" << std::endl;
 
+            now_obstacles_array = grid_obstacles_array_msg;
+            now_obs_cloud = *obs_cloud;
+            now_obs_num = obs_cnt;
+            
+            ROS_INFO("There are %i obstacle points on the map.", obs_cnt);
 
-            // Dilate the local map image
+
+            // Dilate the local map image (only for obstacles)
             tic = ros::Time::now();
             dilation_size = buffer_size/double(now_map.info.resolution);
             std::cout <<"  buffer_size: "<< buffer_size << " meters." << std::endl;
@@ -316,9 +337,26 @@ int main(int argc, char **argv){
             diff = toc - tic;
             std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
 
+            // Dilate the local map image (use larger buffer for global path planning)
+            tic = ros::Time::now();
+            dilation_size = outer_buffer_size/double(now_map.info.resolution);
+            std::cout <<"  outer_buffer_size: "<< outer_buffer_size << " meters." << std::endl;
+            std::cout <<"  now_map.info.resolution: "<< now_map.info.resolution << " meters/col." << std::endl;
+            std::cout <<"  dilation_size = buffer_size/double(now_map.info.resolution) =  "<< dilation_size << " columns." << std::endl;
+            element = getStructuringElement( dilation_type,
+                                           Size( 2*dilation_size + 1, 2*dilation_size+1 ),
+                                           Point( dilation_size, dilation_size ) );
+            Mat outer_obs_dilated_img;
+            dilate(obs_img, outer_obs_dilated_img, element);      //This is where the error popped out!!!!!
+            toc = ros::Time::now();
+            diff = toc - tic;
+            std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
 
 
-            // Find contour of the dialated image
+
+
+
+            // Find contour of the dialated image (only for obstacles)
             tic = ros::Time::now();
             vector<vector<Point> > contours;
             vector<Vec4i> hierarchy;
@@ -379,18 +417,19 @@ int main(int argc, char **argv){
             int linewidth = 1;
             Mat result(obs_dilated_img.size() , CV_8UC1 , cv::Scalar(255)) ;  
             drawContours(result , contours , -1 , cv::Scalar(0) , linewidth) ; 
+            // Draw the robot as a little cross
+            result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2)+1)= 100; 
+            result.at<uchar>(int((end_y-start_y)/2), int((end_x-start_x)/2)+1)= 100; 
+            result.at<uchar>(int((end_y-start_y)/2)+2, int((end_x-start_x)/2)+1)= 100; 
+            result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2))= 100; 
+            result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2)+2)= 100; 
             toc = ros::Time::now();
             diff = toc - tic;
             std::cout <<"Draw contours took: "<< diff <<"seconds" << std::endl;
 
+
             // now_obs_dilated_img = result;
             cv::flip(result, now_obs_dilated_img, 0);
-            // now_obs_dilated_img = obs_img;
-            now_obstacles_array = grid_obstacles_array_msg;
-            now_obs_cloud = *obs_cloud;
-            now_obs_num = obs_cnt;
-            
-            ROS_INFO("There are %i obstacle points on the map.", obs_cnt);
 
             // Find the coordinates of the contour points(with local filter used):
             tic = ros::Time::now();
@@ -429,23 +468,123 @@ int main(int argc, char **argv){
             now_obs_contour_num = contour_cnt;
             ROS_INFO("There are %i contour points on the map.", contour_cnt);
 
+            // Find contour of the outer dialated image (use larger buffer for global path planning)
+            tic = ros::Time::now();
+            // vector<vector<Point> > contours; //declared before
+            // vector<Vec4i> hierarchy; //declared before
+            findContours(outer_obs_dilated_img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+            // Read contour points coordinates and publish contour arrays(First contour point repeated!!)
+            // std_msgs::Float32MultiArray contour_array;
+            contour_array.data.clear();
+            contour_cnt = 0; //declared before
+            // double coord_x_first; //declared before
+            // double coord_y_first; //declared before
+            for (int i = 0; i < contours.size(); i++){
+                if (i > 0){
+                    contour_array.data.push_back(NAN);
+                    contour_array.data.push_back(NAN);
+                }
+                for (int j = 0; j < contours[i].size(); j++){
+                    coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
+                    coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
+                    if (j == 0){
+                        coord_x_first = coord_x;
+                        coord_y_first = coord_y;
+                    }
+                    contour_array.data.push_back(coord_x);
+                    contour_array.data.push_back(coord_y);
+                    if (j == contours[i].size() - 1){
+                        contour_array.data.push_back(coord_x_first);
+                        contour_array.data.push_back(coord_y_first);
+                    }
+                    contour_cnt++;
+                }
+            }
+            now_outer_contour_array = contour_array;
+            toc = ros::Time::now();
+            diff = toc - tic;
+            std::cout <<"Publish outer contour arrays took: "<< diff <<"seconds" << std::endl;
+
+            // Draw the contours out
+            tic = ros::Time::now();
+            // int linewidth = 1; //declared before
+            Mat outer_result(outer_obs_dilated_img.size() , CV_8UC1 , cv::Scalar(255)) ;  //declared before
+            drawContours(outer_result , contours , -1 , cv::Scalar(0) , linewidth) ; 
+            // Draw the robot as a little cross
+            outer_result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2)+1)= 100; 
+            outer_result.at<uchar>(int((end_y-start_y)/2), int((end_x-start_x)/2)+1)= 100; 
+            outer_result.at<uchar>(int((end_y-start_y)/2)+2, int((end_x-start_x)/2)+1)= 100; 
+            outer_result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2))= 100; 
+            outer_result.at<uchar>(int((end_y-start_y)/2)+1, int((end_x-start_x)/2)+2)= 100; 
+            toc = ros::Time::now();
+            diff = toc - tic;
+            std::cout <<"Draw outer contours took: "<< diff <<"seconds" << std::endl;
+            // now_obs_dilated_img = outer_result;
+            cv::flip(outer_result, now_outer_obs_dilated_img, 0);
+            // Find the coordinates of the contour points(with local filter used):
+            tic = ros::Time::now();
+            contour_cnt = 0;
+            // double dist; //declared before
+            // std_msgs::Float32MultiArray dilated_obs_contour_array; // declared before
+            dilated_obs_contour_array.data.clear();
+
+            for (int x = start_x; x <= end_x; x++){
+                for (int y = start_y; y <= end_y; y++){
+                    if (outer_result.at<uchar>(y-start_y, x-start_x) < 100){ // Pick out he useful points on the image
+
+                        coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
+                        coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*double(y+0.5); 
+                        if (use_range_filter){
+                            dist = sqrt(pow(double(pose_on_map.pose.position.x - coord_x),2) + pow(double(pose_on_map.pose.position.y - coord_y),2));
+                            if (dist<range_threshold){
+                                dilated_obs_contour_array.data.push_back(coord_x);
+                                dilated_obs_contour_array.data.push_back(coord_y);
+                                contour_cnt++;
+                            }
+                        }
+                        else{
+                            dilated_obs_contour_array.data.push_back(coord_x);
+                            dilated_obs_contour_array.data.push_back(coord_y);
+                            contour_cnt++;
+                        }
+                        
+                    }
+                }
+            }
+            toc = ros::Time::now();
+            diff = toc - tic;
+            std::cout <<"Finding outer contour points took: "<< diff <<"seconds" << std::endl;
+            now_outer_dilated_obs_array = dilated_obs_contour_array;
+            now_outer_obs_contour_num = contour_cnt;
+            ROS_INFO("There are %i outer contour points on the map.", contour_cnt);
+            std::cout << std::endl;
+
+
+
+
+
 
 
             // Now we can publish all the topics we want.
             ros::Time now = ros::Time::now();
 
-            contour_pub.publish(now_contour_array);
             grid_obstacles_array_pub.publish(now_obstacles_array);
             pcl_conversions::toPCL(now, now_obs_cloud.header.stamp);
             now_obs_cloud.header.frame_id = map_topic_name;
             obstacles_cloud_pub.publish(now_obs_cloud);
 
-
+            contour_pub.publish(now_contour_array);
+            outer_contour_pub.publish(now_outer_contour_array);
 
             sensor_msgs::ImagePtr dilated_map_img = cv_bridge::CvImage(std_msgs::Header(), "mono8", now_obs_dilated_img).toImageMsg();
             dilated_map_img->header.stamp = now;
             map_dilated_img_pub.publish(dilated_map_img);
             map_dilated_contour_pub.publish(now_dilated_obs_array);
+
+            sensor_msgs::ImagePtr outer_dilated_map_img = cv_bridge::CvImage(std_msgs::Header(), "mono8", now_outer_obs_dilated_img).toImageMsg();
+            outer_dilated_map_img->header.stamp = now;
+            map_outer_dilated_img_pub.publish(outer_dilated_map_img);
+            map_outer_dilated_contour_pub.publish(now_outer_dilated_obs_array);
 
             pose_pub.publish(pose_on_map);
         }
