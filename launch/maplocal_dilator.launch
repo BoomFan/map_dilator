@@ -1,27 +1,25 @@
 <launch>
+  <param name="use_sim_time" value="true" />
+  <node name="maplocal_dilator_node" pkg="map_dilator" type="maplocal_dilator_node" output="screen">
+    <remap from="odom" to="/segway/odometry/local_filtered" />
+    <param name="map_topic_name"                    value="map" />
+    <param name="odom_topic_name"                   value="/segway/odometry/local_filtered" />
+    <param name="grid_obstacles_array_name"         value="/roahm/grid_obstacles/array" />
+    <param name="obstacles_pcd_topic_name"          value="/roahm/grid_obstacles/pcd" />
+    <param name="contour_topic_name"                value="/roahm/contour/array" />
+    <param name="map_dilated_contour_name"          value="/roahm/dilated_obstacles/array" />
+    <param name="map_dilated_img_name"              value="/roahm/dilated_obstacles/image" />
+    <param name="pose_on_map_name"                  value="/roahm/pose_odom" />
+    <param name="outer_contour_topic_name"          value="/roahm/outer_contour/array" />
+    <param name="map_outer_dilated_contour_name"    value="/roahm/outer_dilated_obstacles/array" />
+    <param name="map_outer_dilated_img_name"        value="/roahm/outer_dilated_obstacles/image" />
 
-  <group ns="maplocal_dilator">
-    <node name="maplocal_dilator_node" pkg="map_dilator" type="maplocal_dilator_node" output="screen">
+    <param name="use_range_filter"                  value="false" />
+    <param name="range_threshold"                   value="5.0" />
+    <param name="localfilter_size"                  value="6.0" />
+    <param name="dilation_elem"                     value="0" />
+    <param name="buffer_size"                       value="0.3" />
+    <param name="outer_buffer_size"                 value="0.5" />
 
-      <param name="map_topic_name"                    value="map" />
-      <param name="odom_topic_name"                   value="/segway/odometry/local_filtered" />
-      <param name="grid_obstacles_array_name"         value="/roahm/grid_obstacles/array" />
-      <param name="obstacles_pcd_topic_name"          value="/roahm/grid_obstacles/pcd" />
-      <param name="contour_topic_name"                value="/roahm/contour/array" />
-      <param name="map_dilated_contour_name"          value="/roahm/dilated_obstacles/array" />
-      <param name="map_dilated_img_name"              value="/roahm/dilated_obstacles/image" />
-      <param name="pose_on_map_name"                  value="/roahm/pose_odom" />
-      <param name="outer_contour_topic_name"          value="/roahm/outer_contour/array" />
-      <param name="map_outer_dilated_contour_name"    value="/roahm/outer_dilated_obstacles/array" />
-      <param name="map_outer_dilated_img_name"        value="/roahm/outer_dilated_obstacles/image" />
-
-      <param name="use_range_filter"                  value="false" />
-      <param name="range_threshold"                   value="5.0" />
-      <param name="localfilter_size"                  value="6.0" />
-      <param name="dilation_elem"                     value="0" />
-      <param name="buffer_size"                       value="0.3" />
-      <param name="outer_buffer_size"                 value="0.5" />
-
-    </node>
-  </group>
+  </node>
 </launch>

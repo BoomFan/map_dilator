@@ -222,6 +222,7 @@ int main(int argc, char **argv){
     np.param("dilation_elem", dilation_elem, 0);
     np.param("buffer_size", buffer_size, 0.3);
     np.param("outer_buffer_size", outer_buffer_size, 0.5);
+    
 
 
 
@@ -253,6 +254,7 @@ int main(int argc, char **argv){
 	        // continue;
 	    }
 
+        // pose_on_map.header.frame_id = "map";
 		try{
 		    listener.transformPose("map",pose_odom, pose_on_map); 
 		}
