@@ -108,9 +108,9 @@ int dilation_elem = 0;
 double buffer_size = 0.3;
 // double buffer_size ;
 // buffer_size is the obstacle buffer size. Its unit is in meters.
-double outer_buffer_size = 0.45;
+double outer_buffer_size = 0.35;
 // Unlike buffer_size, outer_buffer_size is a larger buffer size for obstacles, it is designed for global waypoints planning. Its unit is in meters.
-int publish_rate = 20;
+int publish_rate = 25;
 int dilation_size;
 int dilation_type;
 Mat element;
