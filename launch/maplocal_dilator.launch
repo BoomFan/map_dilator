@@ -42,10 +42,11 @@
  //   else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
  //   else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }-->
 
-    <param name="buffer_size"                       value="0.3" /><!-- buffer size for obstacles-->
-    <param name="outer_buffer_size"                 value="0.4" /><!-- outer buffer size for obstacles-->
+    <param name="buffer_size"                       value="0.2" /><!-- buffer size for obstacles-->
+    <param name="outer_buffer_size"                 value="0.3" /><!-- outer buffer size for obstacles-->
 
     <param name="publish_rate"                 value="20" /><!-- The publishing rate of topics, Default 20 Hz. Must be interger-->
+    <param name="obs_confidence_threshold"          value="80.0" /><!-- The threshold for obstacles from SLAM-->
 
 
 

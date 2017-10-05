@@ -121,6 +121,7 @@ double buffer_size = 0.3;
 double outer_buffer_size = 0.35;
 // Unlike buffer_size, outer_buffer_size is a larger buffer size for obstacles, it is designed for global waypoints planning. Its unit is in meters.
 int publish_rate = 25;
+double obs_confidence_threshold = 80;
 int dilation_size;
 int dilation_type;
 Mat element;
@@ -247,6 +248,7 @@ int main(int argc, char **argv){
     np.param("buffer_size", buffer_size, 0.3);
     np.param("outer_buffer_size", outer_buffer_size, 0.5);
     np.param("publish_rate", publish_rate, 20);
+    np.param("obs_confidence_threshold", obs_confidence_threshold, 80.0);
     
 
 
@@ -353,7 +355,7 @@ int main(int argc, char **argv){
                     }
 
                     // Draw obstacles from map to cv image if confidence is larger than threshold.
-                    if (now_map.data[x+ now_map.info.width * y] > 80){      //map value is 0 ~ 100, if blank, value = -1
+                    if (now_map.data[x+ now_map.info.width * y] > obs_confidence_threshold){      //map value is 0 ~ 100, if blank, value = -1
                         // ROS_INFO("Obstacle position x: [%i], y: [%i]", x, y);
                         // ROS_INFO("Value: [%i]", now_map.data[x+ now_map.info.width * y]);
                         coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
@@ -384,14 +386,34 @@ int main(int argc, char **argv){
                       now_lidar_cloud.points[i].y > filter_min_y && now_lidar_cloud.points[i].y < filter_max_y){
                         int x = int((now_lidar_cloud.points[i].x-now_map.info.origin.position.x)/now_map.info.resolution);
                         int y = int((now_lidar_cloud.points[i].y-now_map.info.origin.position.y)/now_map.info.resolution);
-                        obs_img.at<uchar>(y-start_y, x-start_x)= 255; 
-                        obs_cloud->points.push_back (pcl::PointXYZ(now_lidar_cloud.points[i].x, now_lidar_cloud.points[i].y, 0));
-                        obs_cnt++;
+                        if (obs_img.at<uchar>(y-start_y, x-start_x) != 255){
+                            obs_img.at<uchar>(y-start_y, x-start_x)= 255; 
+                            obs_cloud->points.push_back (pcl::PointXYZ(now_lidar_cloud.points[i].x, now_lidar_cloud.points[i].y, 0));
+                            obs_cnt++;
+                        }
+                        
                     }
                 }
             }
             else{
                 ROS_INFO("No lidar pointcloud exist!");
+            }
+
+            // Draw pedestrian prediction poinclouds on obs_img, which are already in "map" frame.
+            if(now_pred.width>0){
+                // ROS_INFO("now_pred.width is: %i", now_pred.width);
+                for(int i=0; i < now_pred.width; i++){
+                    if(now_pred.points[i].x > filter_min_x && now_pred.points[i].x < filter_max_x &&
+                      now_pred.points[i].y > filter_min_y && now_pred.points[i].y < filter_max_y){
+                        int x = int((now_pred.points[i].x-now_map.info.origin.position.x)/now_map.info.resolution);
+                        int y = int((now_pred.points[i].y-now_map.info.origin.position.y)/now_map.info.resolution);
+                        if (obs_img.at<uchar>(y-start_y, x-start_x) != 255){
+                            obs_img.at<uchar>(y-start_y, x-start_x)= 255; 
+                            obs_cloud->points.push_back (pcl::PointXYZ(now_pred.points[i].x, now_pred.points[i].y, 0));
+                            obs_cnt++;
+                        }
+                    }
+                }
             }
 
             // cv::namedWindow("ADSA");
