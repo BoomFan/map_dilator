@@ -268,7 +268,7 @@ int main(int argc, char **argv){
         pose_odom.header.frame_id = now_odom.header.frame_id;
         pose_odom.pose.position =  now_odom.pose.pose.position;
         pose_odom.pose.orientation =  now_odom.pose.pose.orientation;
-        ROS_INFO("Before transformation,pose[x,y] is [%f , %f]", pose_odom.pose.position.x, pose_odom.pose.position.y );
+        // ROS_INFO("Before transformation,pose[x,y] is [%f , %f]", pose_odom.pose.position.x, pose_odom.pose.position.y );
 
         tf::StampedTransform transform;
         try{
@@ -277,8 +277,8 @@ int main(int argc, char **argv){
         }
         catch (tf::TransformException &ex) {
             ROS_ERROR("Get transform exception : %s",ex.what());
-            ros::Duration(1.0).sleep();
-            // continue;
+            // ros::Duration(1.0).sleep();
+            continue;
         }
 
         // pose_on_map.header.frame_id = "map";
@@ -290,7 +290,7 @@ int main(int argc, char **argv){
             ROS_ERROR("Transfroming exception : %s",ex.what());
             // continue;
         }
-        ROS_INFO("After transformation,pose[x,y] is [%f , %f]", pose_on_map.pose.position.x, pose_on_map.pose.position.y );
+        // ROS_INFO("After transformation,pose[x,y] is [%f , %f]", pose_on_map.pose.position.x, pose_on_map.pose.position.y );
 
         if(now_map.info.resolution != 0){
             // Now, let's create a square filter (default: 6x6 m^2) around the robot
@@ -345,13 +345,14 @@ int main(int argc, char **argv){
                 // }
                 for (int y = start_y; y <= end_y; y++){
                     if(x<0 || x>=now_map.info.width){
+                        ROS_INFO("Local window reaches out the map range, we'll only receive what's within the map." );
                         std::cout <<"Now, x = "<< x << ", y = "<< y <<std::endl;
                         std::cout <<"start_x = "<< start_x << std::endl;
                         std::cout <<"start_y = "<< start_y << std::endl;
                         std::cout <<"end_x = "<< end_x << std::endl;
                         std::cout <<"end_y = "<< end_y << std::endl;
                         std::cout <<"cheking now_map.data["<< x << "+" << now_map.info.width << "*" << y << "]" << std::endl;
-                        // continue;
+                        continue;
                     }
 
                     // Draw obstacles from map to cv image if confidence is larger than threshold.
@@ -419,9 +420,9 @@ int main(int argc, char **argv){
             // cv::namedWindow("ADSA");
             // cv::imshow("ADSA",obs_img);
             // cv::waitKey(0);
-            ros::Time toc = ros::Time::now();
-            ros::Duration diff = toc - tic;
-            std::cout <<"Finding SLAM grid(with local filter) took: "<< diff <<"seconds" << std::endl;
+            // ros::Time toc = ros::Time::now();
+            // ros::Duration diff = toc - tic;
+            // std::cout <<"Finding SLAM grid(with local filter) took: "<< diff <<"seconds" << std::endl;
 
             now_obstacles_array = grid_obstacles_array_msg;
             now_obs_cloud = *obs_cloud;
@@ -431,11 +432,11 @@ int main(int argc, char **argv){
 
 
             // Dilate the local map image (only for obstacles)
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             dilation_size = buffer_size/double(now_map.info.resolution);
-            std::cout <<"  buffer_size: "<< buffer_size << " meters." << std::endl;
-            std::cout <<"  now_map.info.resolution: "<< now_map.info.resolution << " meters/col." << std::endl;
-            std::cout <<"  dilation_size = buffer_size/double(now_map.info.resolution) =  "<< dilation_size << " columns." << std::endl;
+            // std::cout <<"  buffer_size: "<< buffer_size << " meters." << std::endl;
+            // std::cout <<"  now_map.info.resolution: "<< now_map.info.resolution << " meters/col." << std::endl;
+            // std::cout <<"  dilation_size = buffer_size/double(now_map.info.resolution) =  "<< dilation_size << " columns." << std::endl;
 
             if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
             else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
@@ -446,31 +447,31 @@ int main(int argc, char **argv){
 
             Mat obs_dilated_img;
             dilate(obs_img, obs_dilated_img, element);      //This is where the error popped out!!!!!
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
 
             // Dilate the local map image (use larger buffer for global path planning)
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             dilation_size = outer_buffer_size/double(now_map.info.resolution);
-            std::cout <<"  outer_buffer_size: "<< outer_buffer_size << " meters." << std::endl;
-            std::cout <<"  now_map.info.resolution: "<< now_map.info.resolution << " meters/col." << std::endl;
-            std::cout <<"  dilation_size = buffer_size/double(now_map.info.resolution) =  "<< dilation_size << " columns." << std::endl;
+            // std::cout <<"  outer_buffer_size: "<< outer_buffer_size << " meters." << std::endl;
+            // std::cout <<"  now_map.info.resolution: "<< now_map.info.resolution << " meters/col." << std::endl;
+            // std::cout <<"  dilation_size = buffer_size/double(now_map.info.resolution) =  "<< dilation_size << " columns." << std::endl;
             element = getStructuringElement( dilation_type,
                                            Size( 2*dilation_size + 1, 2*dilation_size+1 ),
                                            Point( dilation_size, dilation_size ) );
             Mat outer_obs_dilated_img;
             dilate(obs_img, outer_obs_dilated_img, element);      //This is where the error popped out!!!!!
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Dilation took: "<< diff <<"seconds" << std::endl;
 
 
 
 
 
             // Find contour of the dialated image (only for obstacles)
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             vector<vector<Point> > contours;
             vector<Vec4i> hierarchy;
             findContours(obs_dilated_img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
@@ -521,12 +522,12 @@ int main(int argc, char **argv){
                 }
             }
             now_contour_array = contour_array;
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Publish contour arrays took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Publish contour arrays took: "<< diff <<"seconds" << std::endl;
 
             // Draw the contours out
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             int linewidth = 1;
             Mat result(obs_dilated_img.size() , CV_8UC1 , cv::Scalar(255)) ;  
             drawContours(result , contours , -1 , cv::Scalar(0) , linewidth) ; 
@@ -538,16 +539,16 @@ int main(int argc, char **argv){
             result.at<uchar>(y-start_y+1, x-start_x)= 100; 
             result.at<uchar>(y-start_y, x-start_x-1)= 100; 
             result.at<uchar>(y-start_y, x-start_x+1)= 100; 
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Draw contours took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Draw contours took: "<< diff <<"seconds" << std::endl;
 
 
             // now_obs_dilated_img = result;
             cv::flip(result, now_obs_dilated_img, 0);
 
             // Find the coordinates of the contour points(with local filter used):
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             contour_cnt = 0;
             double dist;
             std_msgs::Float32MultiArray dilated_obs_contour_array;
@@ -576,15 +577,15 @@ int main(int argc, char **argv){
                     }
                 }
             }
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Finding contour points took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Finding contour points took: "<< diff <<"seconds" << std::endl;
             now_dilated_obs_array = dilated_obs_contour_array;
             now_obs_contour_num = contour_cnt;
-            ROS_INFO("There are %i contour points on the map.", contour_cnt);
+            // ROS_INFO("There are %i contour points on the map.", contour_cnt);
 
             // Find contour of the outer dialated image (use larger buffer for global path planning)
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             // vector<vector<Point> > contours; //declared before
             // vector<Vec4i> hierarchy; //declared before
             findContours(outer_obs_dilated_img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
@@ -616,12 +617,12 @@ int main(int argc, char **argv){
                 }
             }
             now_outer_contour_array = contour_array;
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Publish outer contour arrays took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Publish outer contour arrays took: "<< diff <<"seconds" << std::endl;
 
             // Draw the contours out
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             // int linewidth = 1; //declared before
             Mat outer_result(outer_obs_dilated_img.size() , CV_8UC1 , cv::Scalar(255)) ;  //declared before
             drawContours(outer_result , contours , -1 , cv::Scalar(0) , linewidth) ; 
@@ -633,13 +634,13 @@ int main(int argc, char **argv){
             outer_result.at<uchar>(y-start_y+1, x-start_x)= 100; 
             outer_result.at<uchar>(y-start_y, x-start_x-1)= 100; 
             outer_result.at<uchar>(y-start_y, x-start_x+1)= 100; 
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Draw outer contours took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Draw outer contours took: "<< diff <<"seconds" << std::endl;
             // now_obs_dilated_img = outer_result;
             cv::flip(outer_result, now_outer_obs_dilated_img, 0);
             // Find the coordinates of the contour points(with local filter used):
-            tic = ros::Time::now();
+            // tic = ros::Time::now();
             contour_cnt = 0;
             // double dist; //declared before
             // std_msgs::Float32MultiArray dilated_obs_contour_array; // declared before
@@ -668,13 +669,13 @@ int main(int argc, char **argv){
                     }
                 }
             }
-            toc = ros::Time::now();
-            diff = toc - tic;
-            std::cout <<"Finding outer contour points took: "<< diff <<"seconds" << std::endl;
+            // toc = ros::Time::now();
+            // diff = toc - tic;
+            // std::cout <<"Finding outer contour points took: "<< diff <<"seconds" << std::endl;
             now_outer_dilated_obs_array = dilated_obs_contour_array;
             now_outer_obs_contour_num = contour_cnt;
             ROS_INFO("There are %i outer contour points on the map.", contour_cnt);
-            std::cout << std::endl;
+            // std::cout << std::endl;
 
 
 
