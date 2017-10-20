@@ -124,6 +124,7 @@ int publish_rate = 25;
 double obs_confidence_threshold = 80;
 int dilation_size;
 int dilation_type;
+bool map_processing = false;
 Mat element;
 // double map_width;
 // double map_height;
@@ -143,10 +144,9 @@ double get_wall_time() {
 
 
 void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
+    map_processing = true;
     std_msgs::Header header = msg->header;
     nav_msgs::MapMetaData info = msg->info;
-    
-
 
     ROS_INFO("Got map %d x %d", info.width, info.height);
     ROS_INFO("Map resolution is %f", info.resolution);
@@ -158,6 +158,7 @@ void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr& msg){
     // No obstacle == 0;
     // Obstacle == 100;
     // ROS_INFO("Cell number == %i", msg->data[1984*1984/2+1984/2]);
+    map_processing = false;
 
 }
 
@@ -261,7 +262,7 @@ int main(int argc, char **argv){
      * a unique string for each message.
      */
     // int count = 0;
-    while (ros::ok())
+    while (ros::ok() && !map_processing)
     {
         // Before we publish anything, lets transform the odom data into map frame and store the transformed pose in pose_on_map
         

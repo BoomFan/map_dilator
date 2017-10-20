@@ -35,7 +35,7 @@
     <param name="use_range_filter"                  value="false" /><!-- set it to true if you inly wan to see obstacles within a certain range-->
     <param name="range_threshold"                   value="5.0" /><!-- set the threshold for the range_filter, "use_range_filter" must be "true"-->
 
-    <param name="localfilter_size"                  value="16.0" /><!-- set the size of your local filter, default is 6*6 meters^2-->
+    <param name="localfilter_size"                  value="6.0" /><!-- set the size of your local filter, default is 6*6 meters^2-->
 
     <param name="dilation_elem"                     value="0" /><!-- just set it to "0" if you don't know what it is-->
     <!--if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
