@@ -75,6 +75,7 @@ std::string outer_contour_topic_name = "/roahm/outer_contour/array";
 std::string map_outer_dilated_contour_name = "/roahm/outer_dilated_obstacles/array";
 std::string map_outer_dilated_img_name = "/roahm/outer_dilated_obstacles/image";
 std::string pose_on_map_name = "/roahm/pose_odom";
+std::string odom_on_map_name = "/roahm/odom_on_map";
 // std::string lidar_topic_name = "/first";
 std::string lidar_pcd_name = "/scan_matched_points2";
 std::string prediction_topic_name = "/forecast/output";
@@ -88,7 +89,7 @@ std_msgs::Float32MultiArray now_outer_dilated_obs_array;
 std_msgs::Float32MultiArray now_outer_contour_array;
 pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
 
-geometry_msgs::PoseStamped pose_on_map;
+
 
 // sensor_msgs::LaserScan now_scan;
 
@@ -201,6 +202,8 @@ int main(int argc, char **argv){
 
     tf::TransformListener listener;
     geometry_msgs::PoseStamped pose_odom;
+    geometry_msgs::PoseStamped pose_on_map;
+    nav_msgs::Odometry odom_on_map;
 
     
 
@@ -212,6 +215,7 @@ int main(int argc, char **argv){
     ros::Publisher outer_contour_pub = n.advertise<std_msgs::Float32MultiArray>(outer_contour_topic_name , 10);
     ros::Publisher map_outer_dilated_contour_pub = n.advertise<std_msgs::Float32MultiArray>(map_outer_dilated_contour_name , 10);
     ros::Publisher pose_pub = n.advertise<geometry_msgs::PoseStamped>(pose_on_map_name, 1);
+    ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>(odom_on_map_name, 1);
     
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
@@ -234,11 +238,10 @@ int main(int argc, char **argv){
     np.getParam("/roahm/dilated_obstacles/array", map_dilated_contour_name);
     np.getParam("/roahm/dilated_obstacles/image", map_dilated_img_name);
     np.getParam("/roahm/pose_odom", pose_on_map_name);
+    np.getParam("/roahm/odom_on_map", odom_on_map_name);
     np.getParam("/roahm/outer_contour/array", outer_contour_topic_name);
     np.getParam("/roahm/outer_dilated_obstacles/array", map_outer_dilated_contour_name);
     np.getParam("/roahm/outer_dilated_obstacles/image", map_outer_dilated_img_name);
-    np.getParam("/roahm/pose_odom", pose_on_map_name);
-    // np.getParam("/first", lidar_topic_name);
     np.getParam("/scan_matched_points2", lidar_pcd_name);  // We are subscribing to a pointcloud because this pcd is alredy in "map" frame
     np.getParam("/forecast/output", prediction_topic_name);
 
@@ -284,7 +287,27 @@ int main(int argc, char **argv){
 
         // pose_on_map.header.frame_id = "map";
         try{
+
             listener.transformPose("map",pose_odom, pose_on_map); 
+            // Publish pose into ROS
+            ros::Time now_time = ros::Time::now();
+            pose_on_map.header.stamp = now_time ;
+            pose_pub.publish(pose_on_map);
+
+            // Publish odometry into ROS
+            odom_on_map.header.stamp = now_time ;
+            odom_on_map.header.frame_id = "map";
+            //set the position
+            odom_on_map.pose.pose.position.x = pose_on_map.pose.position.x;
+            odom_on_map.pose.pose.position.y = pose_on_map.pose.position.y;
+            odom_on_map.pose.pose.position.z = 0.0;
+            odom_on_map.pose.pose.orientation = pose_on_map.pose.orientation;
+            //set the velocity
+            odom_on_map.child_frame_id = "segway/base_link";
+            odom_on_map.twist.twist.linear.x = now_odom.twist.twist.linear.x;
+            odom_on_map.twist.twist.angular.z = now_odom.twist.twist.angular.z;
+            //publish the message
+            odom_pub.publish(odom_on_map);
         }
             catch( tf::TransformException ex)
         {
@@ -705,7 +728,7 @@ int main(int argc, char **argv){
             map_outer_dilated_img_pub.publish(outer_dilated_map_img);
             map_outer_dilated_contour_pub.publish(now_outer_dilated_obs_array);
 
-            pose_pub.publish(pose_on_map);
+            
         }
         
         ros::spinOnce();
