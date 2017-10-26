@@ -47,6 +47,7 @@
 
     <param name="publish_rate"                 value="20" /><!-- The publishing rate of topics, Default 20 Hz. Must be interger-->
     <param name="obs_confidence_threshold"          value="80.0" /><!-- The threshold for obstacles from SLAM-->
+    <param name="obs_reduce_distance"          value="0.2" /><!-- the distance to reduce obstacle points, in Meters-->
 
 
 

@@ -126,6 +126,7 @@ double obs_confidence_threshold = 80;
 int dilation_size;
 int dilation_type;
 bool map_processing = false;
+double obs_reduce_distance = 0.2;
 Mat element;
 // double map_width;
 // double map_height;
@@ -253,6 +254,7 @@ int main(int argc, char **argv){
     np.param("outer_buffer_size", outer_buffer_size, 0.5);
     np.param("publish_rate", publish_rate, 20);
     np.param("obs_confidence_threshold", obs_confidence_threshold, 80.0);
+    np.param("obs_reduce_distance", obs_reduce_distance, 0.2);  // Instead of scanning the openCV map image, we insert points into the contour array so that the obstacle points for Fmincon would be less dense.  
     
 
 
@@ -500,30 +502,19 @@ int main(int argc, char **argv){
             vector<Vec4i> hierarchy;
             findContours(obs_dilated_img, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
 
-            // // Read contour points coordinates and publish contour arrays(First contour point not repeated)
-            // std_msgs::Float32MultiArray contour_array;
-            // contour_array.data.clear();
-            // int contour_cnt = 0;
-            // for (int i = 0; i < contours.size(); i++){
-            //     if (i > 0){
-            //         contour_array.data.push_back(NAN);
-            //         contour_array.data.push_back(NAN);
-            //     }
-            //     for (int j = 0; j < contours[i].size(); j++){
-            //         coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
-            //         coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
-            //         contour_array.data.push_back(coord_x);
-            //         contour_array.data.push_back(coord_y);
-            //         contour_cnt++;
-            //     }
-            // }
-
             // Read contour points coordinates and publish contour arrays(First contour point repeated!!)
             std_msgs::Float32MultiArray contour_array;
             contour_array.data.clear();
             int contour_cnt = 0;
             double coord_x_first;
             double coord_y_first;
+            double coord_x_prev;
+            double coord_y_prev;
+
+            double dist;
+            std_msgs::Float32MultiArray dilated_obs_contour_array;
+            dilated_obs_contour_array.data.clear();
+
             for (int i = 0; i < contours.size(); i++){
                 if (i > 0){
                     contour_array.data.push_back(NAN);
@@ -532,13 +523,34 @@ int main(int argc, char **argv){
                 for (int j = 0; j < contours[i].size(); j++){
                     coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
                     coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
-                    if (j == 0){
-                        coord_x_first = coord_x;
-                        coord_y_first = coord_y;
+                    if (j == 0){                         //Save the first contour point!!
+                        coord_x_first = coord_x;  //Save the first point for each obstacle
+                        coord_y_first = coord_y;  //Save the first point for each obstacle
+                        coord_x_prev = coord_x;  //Save coord_x_prev for dilated_obs_contour_array
+                        coord_y_prev = coord_y;  //Save coord_y_prev for dilated_obs_contour_array
+                    }
+                    else{
+                        dist = sqrt(pow(double(coord_x - coord_x_prev),2) + pow(double(coord_y - coord_y_prev),2));
+                        if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
+                            int num_insert = int(dist/obs_reduce_distance);
+                            for(int k = 0; k<num_insert ; k++){
+                                double coord_x_insert = (k*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                double coord_y_insert = (k*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                            }
+                        }
+                        coord_x_prev = coord_x;
+                        coord_y_prev = coord_y;
                     }
                     contour_array.data.push_back(coord_x);
                     contour_array.data.push_back(coord_y);
-                    if (j == contours[i].size() - 1){
+
+                    dilated_obs_contour_array.data.push_back(coord_x);
+                    dilated_obs_contour_array.data.push_back(coord_y);
+
+
+                    if (j == contours[i].size() - 1){    //Repeat the first contour point!!
                         contour_array.data.push_back(coord_x_first);
                         contour_array.data.push_back(coord_y_first);
                     }
@@ -546,6 +558,9 @@ int main(int argc, char **argv){
                 }
             }
             now_contour_array = contour_array;
+            now_dilated_obs_array = dilated_obs_contour_array;
+            now_obs_contour_num = contour_cnt;
+            // ROS_INFO("There are %i sharp contour points on the map.", now_obs_contour_num);
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Publish contour arrays took: "<< diff <<"seconds" << std::endl;
@@ -563,50 +578,51 @@ int main(int argc, char **argv){
             result.at<uchar>(y-start_y+1, x-start_x)= 100; 
             result.at<uchar>(y-start_y, x-start_x-1)= 100; 
             result.at<uchar>(y-start_y, x-start_x+1)= 100; 
+
+            cv::flip(result, now_obs_dilated_img, 0);
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Draw contours took: "<< diff <<"seconds" << std::endl;
 
-
-            // now_obs_dilated_img = result;
-            cv::flip(result, now_obs_dilated_img, 0);
-
-            // Find the coordinates of the contour points(with local filter used):
+            // Find the coordinates of the contour points(with local filter used).
+            // The idea is to draw out the contour we have in now_contour_array data(in color white), and then scan the output image row by row. If a pixel is white, then this pixel is a contour point.
             // tic = ros::Time::now();
-            contour_cnt = 0;
-            double dist;
-            std_msgs::Float32MultiArray dilated_obs_contour_array;
-            dilated_obs_contour_array.data.clear();
+            // contour_cnt = 0;
+            // double dist;
+            // std_msgs::Float32MultiArray dilated_obs_contour_array;
+            // dilated_obs_contour_array.data.clear();
 
-            for (int x = start_x; x <= end_x; x++){
-                for (int y = start_y; y <= end_y; y++){
-                    if (result.at<uchar>(y-start_y, x-start_x) < 100){ // Pick out he useful points on the image
+            // for (int x = start_x; x <= end_x; x++){
+            //     for (int y = start_y; y <= end_y; y++){
+            //         if (result.at<uchar>(y-start_y, x-start_x) < 100){ // Pick out the useful points on the image
 
-                        coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
-                        coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*double(y+0.5); 
-                        if (use_range_filter){
-                            dist = sqrt(pow(double(pose_on_map.pose.position.x - coord_x),2) + pow(double(pose_on_map.pose.position.y - coord_y),2));
-                            if (dist<range_threshold){
-                                dilated_obs_contour_array.data.push_back(coord_x);
-                                dilated_obs_contour_array.data.push_back(coord_y);
-                                contour_cnt++;
-                            }
-                        }
-                        else{
-                            dilated_obs_contour_array.data.push_back(coord_x);
-                            dilated_obs_contour_array.data.push_back(coord_y);
-                            contour_cnt++;
-                        }
+            //             coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
+            //             coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*double(y+0.5); 
+            //             if (use_range_filter){
+            //                 dist = sqrt(pow(double(pose_on_map.pose.position.x - coord_x),2) + pow(double(pose_on_map.pose.position.y - coord_y),2));
+            //                 if (dist<range_threshold){
+            //                     dilated_obs_contour_array.data.push_back(coord_x);
+            //                     dilated_obs_contour_array.data.push_back(coord_y);
+            //                     contour_cnt++;
+            //                 }
+            //             }
+            //             else{
+            //                 dilated_obs_contour_array.data.push_back(coord_x);
+            //                 dilated_obs_contour_array.data.push_back(coord_y);
+            //                 contour_cnt++;
+            //             }
                         
-                    }
-                }
-            }
+            //         }
+            //     }
+            // }
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Finding contour points took: "<< diff <<"seconds" << std::endl;
-            now_dilated_obs_array = dilated_obs_contour_array;
-            now_obs_contour_num = contour_cnt;
+            // now_dilated_obs_array = dilated_obs_contour_array;
+            // now_obs_contour_num = contour_cnt;
             // ROS_INFO("There are %i contour points on the map.", contour_cnt);
+
+
 
             // Find contour of the outer dialated image (use larger buffer for global path planning)
             // tic = ros::Time::now();
@@ -619,6 +635,7 @@ int main(int argc, char **argv){
             contour_cnt = 0; //declared before
             // double coord_x_first; //declared before
             // double coord_y_first; //declared before
+            dilated_obs_contour_array.data.clear();
             for (int i = 0; i < contours.size(); i++){
                 if (i > 0){
                     contour_array.data.push_back(NAN);
@@ -627,13 +644,34 @@ int main(int argc, char **argv){
                 for (int j = 0; j < contours[i].size(); j++){
                     coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
                     coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
-                    if (j == 0){
-                        coord_x_first = coord_x;
-                        coord_y_first = coord_y;
+                    if (j == 0){                         //Save the first contour point!!
+                        coord_x_first = coord_x;  //Save the first point for each obstacle
+                        coord_y_first = coord_y;  //Save the first point for each obstacle
+                        coord_x_prev = coord_x;  //Save coord_x_prev for dilated_obs_contour_array
+                        coord_y_prev = coord_y;  //Save coord_y_prev for dilated_obs_contour_array
+                    }
+                    else{
+                        dist = sqrt(pow(double(coord_x - coord_x_prev),2) + pow(double(coord_y - coord_y_prev),2));
+                        if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
+                            int num_insert = int(dist/obs_reduce_distance);
+                            for(int k = 0; k<num_insert ; k++){
+                                double coord_x_insert = (k*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                double coord_y_insert = (k*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                            }
+                        }
+                        coord_x_prev = coord_x;
+                        coord_y_prev = coord_y;
                     }
                     contour_array.data.push_back(coord_x);
                     contour_array.data.push_back(coord_y);
-                    if (j == contours[i].size() - 1){
+
+                    dilated_obs_contour_array.data.push_back(coord_x);
+                    dilated_obs_contour_array.data.push_back(coord_y);
+
+
+                    if (j == contours[i].size() - 1){    //Repeat the first contour point!!
                         contour_array.data.push_back(coord_x_first);
                         contour_array.data.push_back(coord_y_first);
                     }
@@ -641,6 +679,9 @@ int main(int argc, char **argv){
                 }
             }
             now_outer_contour_array = contour_array;
+            now_outer_dilated_obs_array = dilated_obs_contour_array;
+            now_outer_obs_contour_num = contour_cnt;
+            ROS_INFO("There are %i sharp outer contour points on the map.", contour_cnt);
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Publish outer contour arrays took: "<< diff <<"seconds" << std::endl;
@@ -663,42 +704,44 @@ int main(int argc, char **argv){
             // std::cout <<"Draw outer contours took: "<< diff <<"seconds" << std::endl;
             // now_obs_dilated_img = outer_result;
             cv::flip(outer_result, now_outer_obs_dilated_img, 0);
-            // Find the coordinates of the contour points(with local filter used):
+
+            // Find the coordinates of the contour points(with local filter used).
+            // The idea is to draw out the contour we have in now_outer_contour_array data(in color white), and then scan the output image row by row. If a pixel is white, then this pixel is a contour point.
             // tic = ros::Time::now();
-            contour_cnt = 0;
+            // contour_cnt = 0;
             // double dist; //declared before
             // std_msgs::Float32MultiArray dilated_obs_contour_array; // declared before
-            dilated_obs_contour_array.data.clear();
+            // dilated_obs_contour_array.data.clear();
 
-            for (int x = start_x; x <= end_x; x++){
-                for (int y = start_y; y <= end_y; y++){
-                    if (outer_result.at<uchar>(y-start_y, x-start_x) < 100){ // Pick out he useful points on the image
+            // for (int x = start_x; x <= end_x; x++){
+            //     for (int y = start_y; y <= end_y; y++){
+            //         if (outer_result.at<uchar>(y-start_y, x-start_x) < 100){ // Pick out the useful points on the image
 
-                        coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
-                        coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*double(y+0.5); 
-                        if (use_range_filter){
-                            dist = sqrt(pow(double(pose_on_map.pose.position.x - coord_x),2) + pow(double(pose_on_map.pose.position.y - coord_y),2));
-                            if (dist<range_threshold){
-                                dilated_obs_contour_array.data.push_back(coord_x);
-                                dilated_obs_contour_array.data.push_back(coord_y);
-                                contour_cnt++;
-                            }
-                        }
-                        else{
-                            dilated_obs_contour_array.data.push_back(coord_x);
-                            dilated_obs_contour_array.data.push_back(coord_y);
-                            contour_cnt++;
-                        }
+            //             coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*double(x+0.5);
+            //             coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*double(y+0.5); 
+            //             if (use_range_filter){
+            //                 dist = sqrt(pow(double(pose_on_map.pose.position.x - coord_x),2) + pow(double(pose_on_map.pose.position.y - coord_y),2));
+            //                 if (dist<range_threshold){
+            //                     dilated_obs_contour_array.data.push_back(coord_x);
+            //                     dilated_obs_contour_array.data.push_back(coord_y);
+            //                     contour_cnt++;
+            //                 }
+            //             }
+            //             else{
+            //                 dilated_obs_contour_array.data.push_back(coord_x);
+            //                 dilated_obs_contour_array.data.push_back(coord_y);
+            //                 contour_cnt++;
+            //             }
                         
-                    }
-                }
-            }
+            //         }
+            //     }
+            // }
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Finding outer contour points took: "<< diff <<"seconds" << std::endl;
-            now_outer_dilated_obs_array = dilated_obs_contour_array;
-            now_outer_obs_contour_num = contour_cnt;
-            ROS_INFO("There are %i outer contour points on the map.", contour_cnt);
+            // now_outer_dilated_obs_array = dilated_obs_contour_array;
+            // now_outer_obs_contour_num = contour_cnt;
+            // ROS_INFO("There are %i outer contour points on the map.", contour_cnt);
             // std::cout << std::endl;
 
 
