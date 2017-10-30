@@ -37,7 +37,7 @@
 
     <param name="localfilter_size"                  value="6.0" /><!-- set the size of your local filter, default is 6*6 meters^2-->
 
-    <param name="dilation_elem"                     value="0" /><!-- just set it to "0" if you don't know what it is-->
+    <param name="dilation_elem"                     value="2" /><!-- just set it to "0" if you don't know what it is-->
     <!--if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
  //   else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
  //   else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }-->

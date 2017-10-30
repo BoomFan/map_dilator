@@ -454,7 +454,7 @@ int main(int argc, char **argv){
             now_obs_cloud = *obs_cloud;
             now_obs_num = obs_cnt;
             
-            ROS_INFO("There are %i obstacle points on the map.", obs_cnt);
+            ROS_INFO("There are %i original obstacle points on the map.", obs_cnt);
 
 
             // Dilate the local map image (only for obstacles)
