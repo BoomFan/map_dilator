@@ -32,12 +32,15 @@
     <param name="map_outer_dilated_contour_name"    value="/roahm/outer_dilated_obstacles/array" />
     <param name="map_outer_dilated_img_name"        value="/roahm/outer_dilated_obstacles/image" />
 
+    <param name="obstacles_sharp_pcd_topic_name"        value="/roahm/obstacles/contour_sharp/pcd" />
+    <param name="obstacles_sparse_pcd_topic_name"       value="/roahm/obstacles/contour_sparse/pcd" />
+
     <param name="use_range_filter"                  value="false" /><!-- set it to true if you inly wan to see obstacles within a certain range-->
     <param name="range_threshold"                   value="5.0" /><!-- set the threshold for the range_filter, "use_range_filter" must be "true"-->
 
     <param name="localfilter_size"                  value="6.0" /><!-- set the size of your local filter, default is 6*6 meters^2-->
 
-    <param name="dilation_elem"                     value="0" /><!-- just set it to "0" if you don't know what it is-->
+    <param name="dilation_elem"                     value="2" /><!-- just set it to "0" if you don't know what it is-->
     <!--if( dilation_elem == 0 ){ dilation_type = MORPH_RECT; }
  //   else if( dilation_elem == 1 ){ dilation_type = MORPH_CROSS; }
  //   else if( dilation_elem == 2) { dilation_type = MORPH_ELLIPSE; }-->
@@ -47,7 +50,7 @@
 
     <param name="publish_rate"                 value="20" /><!-- The publishing rate of topics, Default 20 Hz. Must be interger-->
     <param name="obs_confidence_threshold"          value="80.0" /><!-- The threshold for obstacles from SLAM-->
-    <param name="obs_reduce_distance"          value="0.2" /><!-- the distance to reduce obstacle points, in Meters-->
+    <param name="obs_reduce_distance"          value="0.1" /><!-- the distance to reduce obstacle points, in Meters-->
 
 
 

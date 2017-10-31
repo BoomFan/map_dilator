@@ -79,6 +79,8 @@ std::string odom_on_map_name = "/roahm/odom_on_map";
 // std::string lidar_topic_name = "/first";
 std::string lidar_pcd_name = "/scan_matched_points2";
 std::string prediction_topic_name = "/forecast/output";
+std::string obstacles_sharp_pcd_topic_name = "/roahm/obstacles/contour_sharp/pcd";
+std::string obstacles_sparse_pcd_topic_name = "/roahm/obstacles/contour_sparse/pcd";
 
 nav_msgs::OccupancyGrid now_map;
 nav_msgs::Odometry now_odom;
@@ -88,6 +90,8 @@ std_msgs::Float32MultiArray now_contour_array;
 std_msgs::Float32MultiArray now_outer_dilated_obs_array;
 std_msgs::Float32MultiArray now_outer_contour_array;
 pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
+pcl::PointCloud<pcl::PointXYZRGB> now_obs_sharp_cloud;
+pcl::PointCloud<pcl::PointXYZRGB> now_obs_sparse_cloud;
 
 
 
@@ -217,6 +221,8 @@ int main(int argc, char **argv){
     ros::Publisher map_outer_dilated_contour_pub = n.advertise<std_msgs::Float32MultiArray>(map_outer_dilated_contour_name , 10);
     ros::Publisher pose_pub = n.advertise<geometry_msgs::PoseStamped>(pose_on_map_name, 1);
     ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>(odom_on_map_name, 1);
+    ros::Publisher obstacles_sharp_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obstacles_sharp_pcd_topic_name, 1);
+    ros::Publisher obstacles_sparse_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obstacles_sparse_pcd_topic_name, 1);
     
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
@@ -245,6 +251,9 @@ int main(int argc, char **argv){
     np.getParam("/roahm/outer_dilated_obstacles/image", map_outer_dilated_img_name);
     np.getParam("/scan_matched_points2", lidar_pcd_name);  // We are subscribing to a pointcloud because this pcd is alredy in "map" frame
     np.getParam("/forecast/output", prediction_topic_name);
+    np.getParam("/roahm/obstacles/contour_sharp/pcd", obstacles_sharp_pcd_topic_name);
+    np.getParam("/roahm/obstacles/contour_sparse/pcd", obstacles_sparse_pcd_topic_name);
+    
 
     np.param("use_range_filter", use_range_filter, false);
     np.param("range_threshold", range_threshold, 5.0);
@@ -254,7 +263,7 @@ int main(int argc, char **argv){
     np.param("outer_buffer_size", outer_buffer_size, 0.5);
     np.param("publish_rate", publish_rate, 20);
     np.param("obs_confidence_threshold", obs_confidence_threshold, 80.0);
-    np.param("obs_reduce_distance", obs_reduce_distance, 0.2);  // Instead of scanning the openCV map image, we insert points into the contour array so that the obstacle points for Fmincon would be less dense.  
+    np.param("obs_reduce_distance", obs_reduce_distance, 0.1);  // Instead of scanning the openCV map image, we insert points into the contour array so that the obstacle points for Fmincon would be less dense.  
     
 
 
@@ -506,61 +515,174 @@ int main(int argc, char **argv){
             std_msgs::Float32MultiArray contour_array;
             contour_array.data.clear();
             int contour_cnt = 0;
+            int dilate_cnt = 0;
             double coord_x_first;
             double coord_y_first;
             double coord_x_prev;
             double coord_y_prev;
-
             double dist;
+            double next_coord_x;
+            double next_coord_y;
+            double next_dist;
+
             std_msgs::Float32MultiArray dilated_obs_contour_array;
             dilated_obs_contour_array.data.clear();
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr obs_sharp_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+            pcl::PointCloud<pcl::PointXYZRGB>::Ptr obs_sparse_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+            pcl::PointXYZRGB *point = new pcl::PointXYZRGB();
 
-            for (int i = 0; i < contours.size(); i++){
-                if (i > 0){
+            for (int i = 0; i < contours.size(); i++){	// Go into each independent obstacle
+                if (i > 0){		//Add a NAN between two obstacles contour
                     contour_array.data.push_back(NAN);
                     contour_array.data.push_back(NAN);
                 }
+
                 for (int j = 0; j < contours[i].size(); j++){
                     coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
                     coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
+                    contour_array.data.push_back(coord_x);  // Pushback for pure contour array (sharp contour points only with NAN in it and first point od each obstacle repeats)
+                    contour_array.data.push_back(coord_y);  // Pushback for pure contour array (sharp contour points only with NAN in it and first point od each obstacle repeats)
+                    point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 255;  point->g = 0;  point->b = 0;
+                    obs_sharp_cloud->points.push_back(pcl::PointXYZRGB(*point));
+
+                    // Now let's decide if we should pushback for the dilated obstacle contour
                     if (j == 0){                         //Save the first contour point!!
                         coord_x_first = coord_x;  //Save the first point for each obstacle
                         coord_y_first = coord_y;  //Save the first point for each obstacle
                         coord_x_prev = coord_x;  //Save coord_x_prev for dilated_obs_contour_array
                         coord_y_prev = coord_y;  //Save coord_y_prev for dilated_obs_contour_array
+                        // ROS_INFO("First point is [%f,%f].", coord_x_first, coord_y_first);
+                        dilated_obs_contour_array.data.push_back(coord_x);
+                        dilated_obs_contour_array.data.push_back(coord_y);
+                        point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                        obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                        dilate_cnt++;
+                        if(contours[i].size()>1){
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                        }
+                        
                     }
-                    else{
-                        dist = sqrt(pow(double(coord_x - coord_x_prev),2) + pow(double(coord_y - coord_y_prev),2));
+                    else if(j < contours[i].size() - 1){
+                        dist = next_dist;
+                        // ROS_INFO("Now point is [%f,%f].", coord_x, coord_y);
+                        // ROS_INFO("Now dist is [%f].", dist);
                         if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
-                            int num_insert = int(dist/obs_reduce_distance);
-                            for(int k = 0; k<num_insert ; k++){
-                                double coord_x_insert = (k*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
-                                double coord_y_insert = (k*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
-                                dilated_obs_contour_array.data.push_back(coord_x_insert);
-                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            if(num_insert >0 ){
+                                for(int k = 0; k<num_insert ; k++){
+                                    double coord_x_insert = ((k+1)*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                    double coord_y_insert = ((k+1)*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                    dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                    dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                    // ROS_INFO("Distance larger than 1.1*obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                    point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                    obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                    dilate_cnt++;
+                                }
+                            }
+                            
+                            dilated_obs_contour_array.data.push_back(coord_x);
+                            dilated_obs_contour_array.data.push_back(coord_y);
+                            // ROS_INFO("Distance larger than obs_reduce_distance(%f), so insert last segment [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                            coord_x_prev = coord_x;
+                            coord_y_prev = coord_y;
+                            point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                            obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                            dilate_cnt++;
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                        }
+                        else{       // Don't push back the current point if the current point and the next point are all too close too the previous point
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                            if(next_dist > obs_reduce_distance){
+                                // ROS_INFO("Distance smaller than obs_reduce_distance(%f), but since next_dist> obs_reduce_distance, insert point [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                                dilated_obs_contour_array.data.push_back(coord_x);
+                                dilated_obs_contour_array.data.push_back(coord_y);
+                                coord_x_prev = coord_x;
+                                coord_y_prev = coord_y;
+                                point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
                             }
                         }
-                        coord_x_prev = coord_x;
-                        coord_y_prev = coord_y;
                     }
-                    contour_array.data.push_back(coord_x);
-                    contour_array.data.push_back(coord_y);
-
-                    dilated_obs_contour_array.data.push_back(coord_x);
-                    dilated_obs_contour_array.data.push_back(coord_y);
 
 
-                    if (j == contours[i].size() - 1){    //Repeat the first contour point!!
-                        contour_array.data.push_back(coord_x_first);
-                        contour_array.data.push_back(coord_y_first);
+                    if (j == contours[i].size() - 1){
+                        contour_array.data.push_back(coord_x_first); //Repeat the first contour point for pure contour array
+                        contour_array.data.push_back(coord_y_first); //Repeat the first contour point for pure contour array
+                        point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 255;  point->g = 0;  point->b = 0;
+                        obs_sharp_cloud->points.push_back(pcl::PointXYZRGB(*point));
+
+                        //Check if we should insert points between this last point and the N-1 point, or should we abandon this last point.
+                        //Then Check if we should insert points between this last point and the first point.
+                        dist = next_dist;
+                        // ROS_INFO("Now it is the last point of this contour, dist is [%f].", dist);
+                        if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            for(int k = 0; k<num_insert ; k++){
+                                double coord_x_insert = ((k+1)*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                double coord_y_insert = ((k+1)*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                // ROS_INFO("Distance larger than 1.1*obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
+                            }
+                            dilated_obs_contour_array.data.push_back(coord_x);
+                            dilated_obs_contour_array.data.push_back(coord_y);
+                            // ROS_INFO("Distance larger than obs_reduce_distance(%f), so insert last segment [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                            point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                            obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                            dilate_cnt++;
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x),2) + pow(double(coord_y_first - coord_x),2));
+                        }
+                        else{       // Don't push back the current point if the current point and the next point are all too close too the previous point
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x_prev),2) + pow(double(coord_y_first - coord_y_prev),2));
+                            if(next_dist > obs_reduce_distance){
+                                dilated_obs_contour_array.data.push_back(coord_x);
+                                dilated_obs_contour_array.data.push_back(coord_y);
+                                // ROS_INFO("Distance smaller than obs_reduce_distance(%f), but since next_dist> obs_reduce_distance, insert point [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                                point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
+                            }
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x),2) + pow(double(coord_y_first - coord_x),2));
+                        }
+                        if(next_dist > obs_reduce_distance){  //Insert some points between the last point and the first point, if necessary
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            if(num_insert >0 ){
+                                for(int k = 0; k<num_insert ; k++){
+                                    double coord_x_insert = ((k+1)*(coord_x_first - coord_x)*obs_reduce_distance/dist) + coord_x;
+                                    double coord_y_insert = ((k+1)*(coord_y_first - coord_y)*obs_reduce_distance/dist) + coord_y;
+                                    dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                    dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                    // ROS_INFO("The last distance larger than obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                    point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                    obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                    dilate_cnt++;
+                                }
+                            }
+                        }
                     }
                     contour_cnt++;
                 }
+
             }
             now_contour_array = contour_array;
             now_dilated_obs_array = dilated_obs_contour_array;
             now_obs_contour_num = contour_cnt;
-            // ROS_INFO("There are %i sharp contour points on the map.", now_obs_contour_num);
+            now_obs_sharp_cloud = *obs_sharp_cloud;
+            now_obs_sparse_cloud = *obs_sparse_cloud;
+
+            ROS_INFO("There are %i sharp contour points on the map.", now_obs_contour_num);
+            ROS_INFO("There are %i sparse dilated points on the map.", dilate_cnt);
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Publish contour arrays took: "<< diff <<"seconds" << std::endl;
@@ -633,55 +755,163 @@ int main(int argc, char **argv){
             // std_msgs::Float32MultiArray contour_array;
             contour_array.data.clear();
             contour_cnt = 0; //declared before
+            dilate_cnt = 0;  //declared before
             // double coord_x_first; //declared before
             // double coord_y_first; //declared before
+
+
             dilated_obs_contour_array.data.clear();
-            for (int i = 0; i < contours.size(); i++){
-                if (i > 0){
+                        for (int i = 0; i < contours.size(); i++){  // Go into each independent obstacle
+                if (i > 0){     //Add a NAN between two obstacles contour
                     contour_array.data.push_back(NAN);
                     contour_array.data.push_back(NAN);
                 }
+
                 for (int j = 0; j < contours[i].size(); j++){
                     coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j].x+start_x)+0.5);
                     coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j].y+start_y)+0.5); 
+                    contour_array.data.push_back(coord_x);  // Pushback for pure contour array (sharp contour points only with NAN in it and first point od each obstacle repeats)
+                    contour_array.data.push_back(coord_y);  // Pushback for pure contour array (sharp contour points only with NAN in it and first point od each obstacle repeats)
+                    point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 255;  point->g = 0;  point->b = 0;
+                    obs_sharp_cloud->points.push_back(pcl::PointXYZRGB(*point));
+
+                    // Now let's decide if we should pushback for the dilated obstacle contour
                     if (j == 0){                         //Save the first contour point!!
                         coord_x_first = coord_x;  //Save the first point for each obstacle
                         coord_y_first = coord_y;  //Save the first point for each obstacle
                         coord_x_prev = coord_x;  //Save coord_x_prev for dilated_obs_contour_array
                         coord_y_prev = coord_y;  //Save coord_y_prev for dilated_obs_contour_array
+                        // ROS_INFO("First point is [%f,%f].", coord_x_first, coord_y_first);
+                        dilated_obs_contour_array.data.push_back(coord_x);
+                        dilated_obs_contour_array.data.push_back(coord_y);
+                        point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                        obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                        dilate_cnt++;
+                        if(contours[i].size()>1){
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                        }
+                        
                     }
-                    else{
-                        dist = sqrt(pow(double(coord_x - coord_x_prev),2) + pow(double(coord_y - coord_y_prev),2));
+                    else if(j < contours[i].size() - 1){
+                        dist = next_dist;
+                        // ROS_INFO("Now point is [%f,%f].", coord_x, coord_y);
+                        // ROS_INFO("Now dist is [%f].", dist);
                         if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
-                            int num_insert = int(dist/obs_reduce_distance);
-                            for(int k = 0; k<num_insert ; k++){
-                                double coord_x_insert = (k*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
-                                double coord_y_insert = (k*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
-                                dilated_obs_contour_array.data.push_back(coord_x_insert);
-                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            if(num_insert >0 ){
+                                for(int k = 0; k<num_insert ; k++){
+                                    double coord_x_insert = ((k+1)*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                    double coord_y_insert = ((k+1)*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                    dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                    dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                    // ROS_INFO("Distance larger than 1.1*obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                    point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                    obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                    dilate_cnt++;
+                                }
+                            }
+                            
+                            dilated_obs_contour_array.data.push_back(coord_x);
+                            dilated_obs_contour_array.data.push_back(coord_y);
+                            // ROS_INFO("Distance larger than obs_reduce_distance(%f), so insert last segment [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                            coord_x_prev = coord_x;
+                            coord_y_prev = coord_y;
+                            point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                            obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                            dilate_cnt++;
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                        }
+                        else{       // Don't push back the current point if the current point and the next point are all too close too the previous point
+                            next_coord_x = double(now_map.info.origin.position.x) + double(now_map.info.resolution)*(double(contours[i][j+1].x+start_x)+0.5);
+                            next_coord_y = double(now_map.info.origin.position.y) + double(now_map.info.resolution)*(double(contours[i][j+1].y+start_y)+0.5); 
+                            next_dist = sqrt(pow(double(next_coord_x - coord_x_prev),2) + pow(double(next_coord_y - coord_y_prev),2));
+                            if(next_dist > obs_reduce_distance){
+                                // ROS_INFO("Distance smaller than obs_reduce_distance(%f), but since next_dist> obs_reduce_distance, insert point [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                                dilated_obs_contour_array.data.push_back(coord_x);
+                                dilated_obs_contour_array.data.push_back(coord_y);
+                                coord_x_prev = coord_x;
+                                coord_y_prev = coord_y;
+                                point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
                             }
                         }
-                        coord_x_prev = coord_x;
-                        coord_y_prev = coord_y;
                     }
-                    contour_array.data.push_back(coord_x);
-                    contour_array.data.push_back(coord_y);
-
-                    dilated_obs_contour_array.data.push_back(coord_x);
-                    dilated_obs_contour_array.data.push_back(coord_y);
 
 
-                    if (j == contours[i].size() - 1){    //Repeat the first contour point!!
-                        contour_array.data.push_back(coord_x_first);
-                        contour_array.data.push_back(coord_y_first);
+                    if (j == contours[i].size() - 1){
+                        contour_array.data.push_back(coord_x_first); //Repeat the first contour point for pure contour array
+                        contour_array.data.push_back(coord_y_first); //Repeat the first contour point for pure contour array
+                        point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 255;  point->g = 0;  point->b = 0;
+                        obs_sharp_cloud->points.push_back(pcl::PointXYZRGB(*point));
+
+                        //Check if we should insert points between this last point and the N-1 point, or should we abandon this last point.
+                        //Then Check if we should insert points between this last point and the first point.
+                        dist = next_dist;
+                        // ROS_INFO("Now it is the last point of this contour, dist is [%f].", dist);
+                        if (dist > obs_reduce_distance){    // Insert points into the dilated_obs_contour_array if two consequtive contour points are too far.
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            for(int k = 0; k<num_insert ; k++){
+                                double coord_x_insert = ((k+1)*(coord_x - coord_x_prev)*obs_reduce_distance/dist) + coord_x_prev;
+                                double coord_y_insert = ((k+1)*(coord_y - coord_y_prev)*obs_reduce_distance/dist) + coord_y_prev;
+                                dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                // ROS_INFO("Distance larger than 1.1*obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
+                            }
+                            dilated_obs_contour_array.data.push_back(coord_x);
+                            dilated_obs_contour_array.data.push_back(coord_y);
+                            // ROS_INFO("Distance larger than obs_reduce_distance(%f), so insert last segment [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                            point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                            obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                            dilate_cnt++;
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x),2) + pow(double(coord_y_first - coord_x),2));
+                        }
+                        else{       // Don't push back the current point if the current point and the next point are all too close too the previous point
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x_prev),2) + pow(double(coord_y_first - coord_y_prev),2));
+                            if(next_dist > obs_reduce_distance){
+                                dilated_obs_contour_array.data.push_back(coord_x);
+                                dilated_obs_contour_array.data.push_back(coord_y);
+                                // ROS_INFO("Distance smaller than obs_reduce_distance(%f), but since next_dist> obs_reduce_distance, insert point [%f,%f].", obs_reduce_distance, coord_x, coord_y);
+                                point->x = coord_x;  point->y = coord_y;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                dilate_cnt++;
+                            }
+                            next_dist = sqrt(pow(double(coord_x_first - coord_x),2) + pow(double(coord_y_first - coord_x),2));
+                        }
+                        if(next_dist > obs_reduce_distance){  //Insert some points between the last point and the first point, if necessary
+                            int num_insert = int((dist/obs_reduce_distance)-0.1);
+                            if(num_insert >0 ){
+                                for(int k = 0; k<num_insert ; k++){
+                                    double coord_x_insert = ((k+1)*(coord_x_first - coord_x)*obs_reduce_distance/dist) + coord_x;
+                                    double coord_y_insert = ((k+1)*(coord_y_first - coord_y)*obs_reduce_distance/dist) + coord_y;
+                                    dilated_obs_contour_array.data.push_back(coord_x_insert);
+                                    dilated_obs_contour_array.data.push_back(coord_y_insert);
+                                    // ROS_INFO("The last distance larger than obs_reduce_distance(%f), so insert [%f,%f].", obs_reduce_distance, coord_x_insert, coord_y_insert);
+                                    point->x = coord_x_insert;  point->y = coord_y_insert;  point->z = 0;  point->r = 0;  point->g = 0;  point->b = 255;
+                                    obs_sparse_cloud->points.push_back(pcl::PointXYZRGB(*point));
+                                    dilate_cnt++;
+                                }
+                            }
+                        }
                     }
                     contour_cnt++;
                 }
+
             }
             now_outer_contour_array = contour_array;
             now_outer_dilated_obs_array = dilated_obs_contour_array;
             now_outer_obs_contour_num = contour_cnt;
-            ROS_INFO("There are %i sharp outer contour points on the map.", contour_cnt);
+            ROS_INFO("There are %i sharp outer contour points on the map.", now_outer_obs_contour_num);
+            ROS_INFO("There are %i sparse dilated points on the map.\n", dilate_cnt);
+
+
             // toc = ros::Time::now();
             // diff = toc - tic;
             // std::cout <<"Publish outer contour arrays took: "<< diff <<"seconds" << std::endl;
@@ -770,6 +1000,14 @@ int main(int argc, char **argv){
             outer_dilated_map_img->header.stamp = now;
             map_outer_dilated_img_pub.publish(outer_dilated_map_img);
             map_outer_dilated_contour_pub.publish(now_outer_dilated_obs_array);
+
+            pcl_conversions::toPCL(now, now_obs_sharp_cloud.header.stamp);
+            now_obs_sharp_cloud.header.frame_id = map_topic_name;
+            obstacles_sharp_cloud_pub.publish(now_obs_sharp_cloud);
+
+            pcl_conversions::toPCL(now, now_obs_sparse_cloud.header.stamp);
+            now_obs_sparse_cloud.header.frame_id = map_topic_name;
+            obstacles_sparse_cloud_pub.publish(now_obs_sparse_cloud);
 
             
         }
