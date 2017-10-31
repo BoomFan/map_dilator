@@ -79,8 +79,10 @@ std::string odom_on_map_name = "/roahm/odom_on_map";
 // std::string lidar_topic_name = "/first";
 std::string lidar_pcd_name = "/scan_matched_points2";
 std::string prediction_topic_name = "/forecast/output";
-std::string obstacles_sharp_pcd_topic_name = "/roahm/obstacles/contour_sharp/pcd";
-std::string obstacles_sparse_pcd_topic_name = "/roahm/obstacles/contour_sparse/pcd";
+std::string obs_sharp_pcd_topic_name = "/roahm/obstacles/contour_sharp/pcd";
+std::string obs_sparse_pcd_topic_name = "/roahm/obstacles/contour_sparse/pcd";
+std::string obs_outer_sharp_pcd_topic_name = "/roahm/obstacles/outer_contour_sharp/pcd";
+std::string obs_outer_sparse_pcd_topic_name = "/roahm/obstacles/outer_contour_sparse/pcd";
 
 nav_msgs::OccupancyGrid now_map;
 nav_msgs::Odometry now_odom;
@@ -92,6 +94,8 @@ std_msgs::Float32MultiArray now_outer_contour_array;
 pcl::PointCloud<pcl::PointXYZ> now_obs_cloud;
 pcl::PointCloud<pcl::PointXYZRGB> now_obs_sharp_cloud;
 pcl::PointCloud<pcl::PointXYZRGB> now_obs_sparse_cloud;
+pcl::PointCloud<pcl::PointXYZRGB> now_outer_obs_sharp_cloud;
+pcl::PointCloud<pcl::PointXYZRGB> now_outer_obs_sparse_cloud;
 
 
 
@@ -221,8 +225,11 @@ int main(int argc, char **argv){
     ros::Publisher map_outer_dilated_contour_pub = n.advertise<std_msgs::Float32MultiArray>(map_outer_dilated_contour_name , 10);
     ros::Publisher pose_pub = n.advertise<geometry_msgs::PoseStamped>(pose_on_map_name, 1);
     ros::Publisher odom_pub = n.advertise<nav_msgs::Odometry>(odom_on_map_name, 1);
-    ros::Publisher obstacles_sharp_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obstacles_sharp_pcd_topic_name, 1);
-    ros::Publisher obstacles_sparse_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obstacles_sparse_pcd_topic_name, 1);
+    ros::Publisher obstacles_sharp_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obs_sharp_pcd_topic_name, 1);
+    ros::Publisher obstacles_sparse_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obs_sparse_pcd_topic_name, 1);
+    ros::Publisher obstacles_outer_sharp_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obs_outer_sharp_pcd_topic_name, 1);
+    ros::Publisher obstacles_outer_sparse_cloud_pub = n.advertise<pcl::PointCloud<pcl::PointXYZRGB> >(obs_outer_sparse_pcd_topic_name, 1);
+    
     
     ros::NodeHandle nh;
     image_transport::ImageTransport it(nh);
@@ -251,8 +258,10 @@ int main(int argc, char **argv){
     np.getParam("/roahm/outer_dilated_obstacles/image", map_outer_dilated_img_name);
     np.getParam("/scan_matched_points2", lidar_pcd_name);  // We are subscribing to a pointcloud because this pcd is alredy in "map" frame
     np.getParam("/forecast/output", prediction_topic_name);
-    np.getParam("/roahm/obstacles/contour_sharp/pcd", obstacles_sharp_pcd_topic_name);
-    np.getParam("/roahm/obstacles/contour_sparse/pcd", obstacles_sparse_pcd_topic_name);
+    np.getParam("/roahm/obstacles/contour_sharp/pcd", obs_sharp_pcd_topic_name);
+    np.getParam("/roahm/obstacles/contour_sparse/pcd", obs_sparse_pcd_topic_name);
+    np.getParam("/roahm/obstacles/outer_contour_sharp/pcd", obs_outer_sharp_pcd_topic_name);
+    np.getParam("/roahm/obstacles/outer_contour_sparse/pcd", obs_outer_sparse_pcd_topic_name);
     
 
     np.param("use_range_filter", use_range_filter, false);
@@ -311,7 +320,7 @@ int main(int argc, char **argv){
             //set the position
             odom_on_map.pose.pose.position.x = pose_on_map.pose.position.x;
             odom_on_map.pose.pose.position.y = pose_on_map.pose.position.y;
-            odom_on_map.pose.pose.position.z = 0.0;
+            odom_on_map.pose.pose.position.z = pose_on_map.pose.position.z;
             odom_on_map.pose.pose.orientation = pose_on_map.pose.orientation;
             //set the velocity
             odom_on_map.child_frame_id = "segway/base_link";
@@ -758,10 +767,12 @@ int main(int argc, char **argv){
             dilate_cnt = 0;  //declared before
             // double coord_x_first; //declared before
             // double coord_y_first; //declared before
+            obs_sharp_cloud->clear();
+            obs_sparse_cloud->clear();
 
 
             dilated_obs_contour_array.data.clear();
-                        for (int i = 0; i < contours.size(); i++){  // Go into each independent obstacle
+            for (int i = 0; i < contours.size(); i++){  // Go into each independent obstacle
                 if (i > 0){     //Add a NAN between two obstacles contour
                     contour_array.data.push_back(NAN);
                     contour_array.data.push_back(NAN);
@@ -908,6 +919,8 @@ int main(int argc, char **argv){
             now_outer_contour_array = contour_array;
             now_outer_dilated_obs_array = dilated_obs_contour_array;
             now_outer_obs_contour_num = contour_cnt;
+            now_outer_obs_sharp_cloud = *obs_sharp_cloud;
+            now_outer_obs_sparse_cloud = *obs_sparse_cloud;
             ROS_INFO("There are %i sharp outer contour points on the map.", now_outer_obs_contour_num);
             ROS_INFO("There are %i sparse dilated points on the map.\n", dilate_cnt);
 
@@ -1008,6 +1021,14 @@ int main(int argc, char **argv){
             pcl_conversions::toPCL(now, now_obs_sparse_cloud.header.stamp);
             now_obs_sparse_cloud.header.frame_id = map_topic_name;
             obstacles_sparse_cloud_pub.publish(now_obs_sparse_cloud);
+
+            pcl_conversions::toPCL(now, now_outer_obs_sharp_cloud.header.stamp);
+            now_outer_obs_sharp_cloud.header.frame_id = map_topic_name;
+            obstacles_outer_sharp_cloud_pub.publish(now_outer_obs_sharp_cloud);
+
+            pcl_conversions::toPCL(now, now_outer_obs_sparse_cloud.header.stamp);
+            now_outer_obs_sparse_cloud.header.frame_id = map_topic_name;
+            obstacles_outer_sparse_cloud_pub.publish(now_outer_obs_sparse_cloud);
 
             
         }
