@@ -60,6 +60,11 @@
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/PoseStamped.h>
 
+namespace cv // OpenCV 3.2 is stupid, I have to add this block so that cv::vector is defined.
+{
+    using std::vector;
+}
+
 using namespace cv;
 
 ros::Publisher map_pub;

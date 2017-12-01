@@ -22,8 +22,9 @@ else()
     set(CMAKE_BUILD_TYPE Release)
 endif()
 ###############################################################################
-
-find_package(OpenCV 2.4 COMPONENTS core highgui imgproc REQUIRED)
+#set(CMAKE_PREFIX_PATH "/home/roahm/opencv-2.4.13/release/installed/")
+find_package(OpenCV 3.2 COMPONENTS core highgui imgproc REQUIRED)
+#find_package(OpenCV2 REQUIRED)
 find_package(PCL REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
